@@ -1,4 +1,41 @@
-
+#' Function to run the Fast and Robust Bootstrap
+#'
+#' This function runs a Fast and Robust Bootstrap for robust regression
+#' estimators (MM) as computed by \code{robustbase::lmrob}.
+#'
+#' The fast and robust bootstrap as described in Salibian-Barrera, M. and
+#' Zamar, R.H. (2002), and Salibian-Barrera, M., Van Aels, S. and Willems, G.
+#' (2008).
+#'
+#' @param lmrob.object An object of class \code{lmrob} as returned by
+#' \code{robustbase::lmrob}
+#' @param nboot An integer number. The number of bootstrap samples to be used.
+#' @return An object of class 'frb' which includes a matrix of the bootstrap
+#'   parameter estimates.
+#' @note See the github repository \link{https://github.com/msalibian/FRB}
+#' @author Matias Salibian-Barrera, matias@@stat.ubc.ca
+#' @references Salibian-Barrera, M. and Zamar, R.H. (2002). Bootstrapping
+#' robust estimates of regression. The Annals of Statistics, 30, 556-582.
+#' http://dx.doi.org/10.1214/aos/1021379865
+#'
+#' Salibian-Barrera, M., Van Aels, S. and Willems, G. (2008). Fast and robust
+#' bootstrap. Statistical Methods and Applications 17, 41-71.
+#' http://dx.doi.org/10.1007/s10260-007-0048-6
+#' @keywords robustness robust regression bootstrap
+#' @examples
+#'
+#' library(robustbase)
+#' a <- lmrob(LNOx ~ LNOxEm + sqrtWS, data=NOxEmissions)
+#' tmp <- frb(lmrob.object=a, nboot=1000, return.coef=FALSE)
+#' # Estimated SE's for estimated regression coefficients
+#' sqrt(diag(tmp))
+#' # [1] 0.056422169 0.007782671 0.012662991
+#' # compare with SE's based on the asymptotic approximation
+#' sqrt(diag(summary(a)$cov))
+#' # (Intercept)      LNOxEm      sqrtWS
+#' # 0.054256788 0.007482346 0.013222502
+#'
+#' @export frb
 frb <- function(lmrob.object, nboot=1000){
   thecall <- match.call()
 
@@ -115,4 +152,5 @@ print.summary.frb <- function(x, ...){
   cat("\nCorrelation:\n")
   print(x$cor)
 
+  invisible(object)
 }
