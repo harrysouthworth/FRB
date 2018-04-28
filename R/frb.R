@@ -39,38 +39,48 @@
 frb <- function(lmrob.object, nboot=1000){
   thecall <- match.call()
 
-  lmrob.Chi <- Mchi
-  lmrob.Psi <- Mpsi
-  # lmrob.Psi <- tukeyPsi1
-  # lmrob.Chi <- tukeyChi
+  lmrob.Chi <- robustbase::Mchi
+  lmrob.Psi <- robustbase::Mpsi
+
   co <- lmrob.object$control
+  
   tuning.psi <- co$tuning.psi
   tuning.chi <- co$tuning.chi
-  beta.s <- lmrob.object$init.S$coefficients
-  beta.mm <- coef(lmrob.object)
-  re.mm <- as.vector( residuals(lmrob.object) )
+  
+  psi <- co$psi
+
   uu <- model.frame(lmrob.object)
   yy <- as.vector( model.extract(uu, 'response') )
   xx <- model.matrix(lmrob.object)
-  n <- (dd <- attr(xx, 'dim'))[1]
-  p <- dd[2]
+  n <- nrow(xx)
+  p <- ncol(xx)
   attributes(xx) <- NULL
-  xx <- matrix(xx, n, p )
-  re.s <- as.vector( yy - xx %*% beta.s )
+  xx <- matrix(xx, nrow = n, ncol = p)
+  
   scale <- lmrob.object$scale
+
+  beta.s <- lmrob.object$init.S$coefficients
+  beta.mm <- lmrob.object$coefficients
+  re.mm <- as.vector(lmrob.object$residuals)
+  re.s <- as.vector( yy - xx %*% beta.s )
+  
+  ss <- lmrob.Chi( re.s/scale, psi = psi, cc=tuning.chi, deriv=0 )
+  # ss <- Chi(re.s/scale)
+
+  # w <- Psi(r/sigma)/r
+  w <- lmrob.Psi(x= re.mm / scale, psi = psi, cc=tuning.psi, deriv=0) / re.mm
+  
   # w.p <- Psi'(r/sigma)
-  w.p <- lmrob.Psi(x = re.mm / scale, psi='bisquare', cc=tuning.psi, deriv=1)
+  w.p <- lmrob.Psi(x = re.mm / scale, psi = psi, cc=tuning.psi, deriv=1)
   # a more efficient way of doing this?
   a <- t(xx) %*% diag(w.p) %*% xx
-  # w <- Psi(r/sigma)/r
-  w <- lmrob.Psi(x= re.mm / scale, psi='bisquare', cc=tuning.psi, deriv=0) / re.mm
   # a more efficient way of doing this?
   b <- t(xx) %*% diag(w) %*% xx
   # w.pp <- Psi'(r/sigma)*r/sigma
   w.pp <- w.p * re.mm / scale
   d <- as.vector( t(xx) %*% w.pp )
   # e <- \sum Chi'(r/sigma)*r/sigma
-  e <- sum( lmrob.Chi(re.s / scale, psi='bisquare', cc=tuning.chi, deriv=1) * re.s / scale )
+  e <- sum( lmrob.Chi(re.s / scale, psi = psi, cc=tuning.chi, deriv=1) * re.s / scale )
   d <- d / 2 * (n - p) * scale / e;
   x2 <- solve(a)
   x3 <- x2 %*% b * scale
@@ -78,17 +88,16 @@ frb <- function(lmrob.object, nboot=1000){
   # correction matrix is in x3
   # correction vector is in v2
   # set.seed(seed)
-  ss <- lmrob.Chi( re.s/scale, psi='bisquare', cc=tuning.chi, deriv=0 )
-  # ss <- Chi(re.s/scale)
-  boot.beta <- matrix(0, nboot, p)
+
+  boot.beta <- matrix(0, nrow = nboot, ncol = p)
   a <- .C('R_frb', as.double(xx), as.double(yy), as.double(w), as.integer(n),
           as.integer(p), as.double(beta.mm), as.double(scale),
           as.double(ss), bb=as.double(boot.beta), as.integer(nboot),
           as.double(x3), as.double(v2), PACKAGE="FRB")$bb
 
-  a <- matrix(a, nboot, p)
-  a <- t(t(a) + coef(lmrob.object))
-  colnames(a) <- names(coef(lmrob.object))
+  a <- matrix(a, nrow = nboot, ncol = p)
+  a <- t(t(a) + lmrob.object$coefficients)
+  colnames(a) <- names(lmrob.object$coefficients)
 
   res <- list(call = thecall, B = nboot, param = a, lmrob.object = lmrob.object)
 
@@ -97,6 +106,7 @@ frb <- function(lmrob.object, nboot=1000){
   res
 }
 
+#' @method print frb
 print.frb <- function(x, ...){
   print(x$call)
 
@@ -118,6 +128,7 @@ print.frb <- function(x, ...){
   invisible()
 }
 
+#' @method summary frb
 summary.frb <- function(object, prob=c(.025, .25, .5, .75, .975), ...){
   thecall <- match.call()
 
@@ -135,6 +146,7 @@ summary.frb <- function(object, prob=c(.025, .25, .5, .75, .975), ...){
   res
 }
 
+#' @method print summary.frb
 print.summary.frb <- function(x, ...){
   print(x$call)
 
@@ -152,5 +164,36 @@ print.summary.frb <- function(x, ...){
   cat("\nCorrelation:\n")
   print(x$cor)
 
-  invisible(object)
+  invisible(x)
 }
+
+#' @method plot frb
+plot.frb <- function(x, y=NULL, ...){
+  x <- x$param
+  np <- ncol(x)
+  cn <- colnames(x)
+  
+  oldPar <- par(no.readonly=TRUE)
+  on.exit(par(oldPar))
+  
+  par(mfrow=c(1, np))
+  
+  for(i in 1:np){
+    hist(x[, i], xlab=cn[i], main="")
+  }
+  
+  invisible()
+}
+
+#' @method ggplot frb
+ggplot.frb <- function(data, mapping=NULL, fill="blue", color="blue", bins=30, xlab="", ylab="count", ..., environment=parent.frame()){
+  x <- data$param
+  nms <- rep(colnames(x), each=nrow(x))
+  d <- data.frame(value = c(x), names = nms)
+  
+  ggplot(d, aes(value)) +
+    geom_histogram(fill=fill, color=color, bins=bins) +
+    facet_wrap(~names, scales="free")
+}
+
+
